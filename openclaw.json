@@ -1,0 +1,49 @@
+{
+  // OpenClaw Workspace Config — Email Reader via WhatsApp
+  // Docs: https://docs.openclaw.ai/gateway/configuration
+
+  // Proveedor IA — Ollama en red local
+  models: {
+    providers: {
+      ollama: {
+        type: "ollama",
+        baseUrl: "${OLLAMA_HOST}",
+      }
+    }
+  },
+
+  agents: {
+    defaults: {
+      model: "qwen2.5:7b",  // Cambiar a "qwen2.5:72b" para tareas mas complejas
+      workspace: "./",
+    }
+  },
+
+  // Canal WhatsApp — Baileys (WhatsApp Web protocol)
+  channels: {
+    whatsapp: {
+      dmPolicy: "allowlist",
+      allowFrom: ["+34XXXXXXXXX"],  // Reemplazar con tu numero
+      groupPolicy: "disabled",
+    },
+  },
+
+  // Skills habilitados
+  skills: {
+    entries: {
+      "email-reader": { enabled: true }
+    }
+  },
+
+  // Gateway
+  gateway: {
+    mode: "local",
+    port: 18789,
+    bind: "loopback",
+  },
+
+  // Logging
+  logging: {
+    level: "info",
+  },
+}

@@ -1,0 +1,18 @@
+{
+  "name": "openclaw-email-reader",
+  "version": "1.0.0",
+  "description": "OpenClaw skill - Lector de email para WhatsApp con formato rico",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/imap-client.js check --format whatsapp",
+    "test:imap": "node scripts/imap-client.js check --limit 3",
+    "test:format": "node -e \"const f = require('./scripts/email-formatter'); console.log(f.formatEmailList({count:2,totalUnseen:5,emails:[{uid:1,from:{name:'Amazon',address:'no-reply@amazon.es'},subject:'Tu pedido ha sido enviado',date:new Date(),flags:[],hasAttachments:true,attachmentCount:1},{uid:2,from:{name:'Carlos',address:'carlos@example.com'},subject:'Re: Reunion viernes',date:new Date(Date.now()-3600000*5),flags:[],hasAttachments:false,attachmentCount:0}]}))\""
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "html-pdf-node": "^1.0.8",
+    "html-to-text": "^9.0.5",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1"
+  }
+}
