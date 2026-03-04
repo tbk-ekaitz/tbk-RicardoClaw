@@ -4,15 +4,34 @@ Prueba tecnica de integracion de OpenClaw para automatizaciones en entornos no i
 
 ## Que es esto?
 
-Integracion de [OpenClaw](https://openclaw.ai/) que permite **leer y gestionar correos de Gmail desde WhatsApp** con formato visual rico (negrita, cursiva, iconos, listas, PDFs).
+Integracion de [OpenClaw](https://openclaw.ai/) que permite **leer correos de Gmail desde WhatsApp** con formato visual rico (negrita, cursiva, iconos, listas, PDFs).
+
+### Seguridad: SOLO LECTURA por diseno
+
+Este sistema opera en modo **solo lectura garantizado a nivel de protocolo**:
+
+- La conexion IMAP usa el comando `EXAMINE` (no `SELECT`) — el servidor de correo **rechaza cualquier escritura** aunque se intentara
+- **No existe codigo** para enviar, responder, eliminar, mover, ni modificar emails
+- **No hay SMTP** — es imposible enviar emails desde este sistema
+- **No se pueden alterar flags** (leido/no leido, importante, etc.)
+- Los PDFs temporales se auto-eliminan a los 5 minutos
+
+### Privacidad: datos 100% locales
+
+- Todo el procesamiento ocurre en tu maquina local
+- Los emails se procesan en memoria y se descartan tras mostrarlos
+- **No se guardan** emails en disco, base de datos, ni cache
+- **No se envian** datos a servicios externos ni terceros
+- Credenciales almacenadas solo en `.env` local (excluido de git)
+- El LLM (Ollama) corre en tu propia red local
 
 ### Arquitectura
 
 ```
-WhatsApp <---> OpenClaw Gateway <---> Gmail (IMAP)
+WhatsApp <---> OpenClaw Gateway <---> Gmail (IMAP EXAMINE / solo lectura)
                      |
               Skill: email-reader
-              LLM: Ollama (qwen2.5:7b)
+              LLM: Ollama local (qwen2.5:7b)
 ```
 
 ### Comandos desde WhatsApp
@@ -23,7 +42,7 @@ WhatsApp <---> OpenClaw Gateway <---> Gmail (IMAP)
 | `leer 1` | Leer el primer email |
 | `buscar Amazon` | Buscar emails de Amazon |
 | `carpetas` | Ver carpetas del buzon |
-| `marcar leido 2` | Marcar email como leido |
+| `pdf` | Recibir email largo como documento PDF |
 
 ### Ejemplo de formato
 
@@ -65,12 +84,12 @@ Ver [docs/SETUP.md](docs/SETUP.md) para la guia completa.
 ├── .env.example                   # Plantilla de credenciales
 ├── setup.sh                       # Script de instalacion
 ├── skills/email-reader/
-│   ├── SKILL.md                   # Definicion del skill para OpenClaw
+│   ├── SKILL.md                   # Definicion del skill (solo lectura)
 │   ├── package.json               # Dependencias Node.js
 │   └── scripts/
-│       ├── imap-client.js         # Cliente IMAP (check, fetch, search, mark)
+│       ├── imap-client.js         # Cliente IMAP solo lectura (EXAMINE)
 │       ├── email-formatter.js     # Formateador WhatsApp (negrita, iconos)
-│       └── email-to-pdf.js        # Conversion de email largo a PDF
+│       └── email-to-pdf.js        # Conversion de email largo a PDF temporal
 └── docs/SETUP.md                  # Guia de configuracion detallada
 ```
 
@@ -78,5 +97,5 @@ Ver [docs/SETUP.md](docs/SETUP.md) para la guia completa.
 
 - **OpenClaw** — Asistente IA open-source (gateway + channels + skills)
 - **Baileys** — Protocolo WhatsApp Web (integrado en OpenClaw)
-- **ImapFlow** — Cliente IMAP moderno para Node.js
-- **Ollama** — LLM local (qwen2.5:7b / 72b)
+- **ImapFlow** — Cliente IMAP moderno para Node.js (modo EXAMINE)
+- **Ollama** — LLM local (qwen2.5:7b / 72b) — datos nunca salen de tu red

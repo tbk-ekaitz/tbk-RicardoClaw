@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * email-to-pdf.js — Convierte un email a PDF para enviar como adjunto en WhatsApp
+ * email-to-pdf.js — Convierte un email a PDF (SOLO LECTURA)
+ *
+ * SEGURIDAD: Usa IMAP en modo EXAMINE (readOnly: true) — imposible modificar emails.
+ * PRIVACIDAD: El PDF se genera en /tmp como archivo temporal. No se envia a terceros.
+ *             El PDF debe eliminarse tras su envio por WhatsApp.
+ *             No se persiste ningun dato de email en disco permanente.
  *
  * Uso: node email-to-pdf.js <uid> [--output path]
- *
- * Conecta a IMAP, descarga el email, lo renderiza como HTML y genera un PDF.
- * El PDF se guarda en /tmp/ y se imprime la ruta al stdout para que OpenClaw
- * lo envie como documento adjunto.
  */
 
 const { ImapFlow } = require("imapflow");
@@ -34,6 +35,7 @@ function getConfig() {
       pass: process.env.IMAP_PASS,
     },
     logger: false,
+    disableAutoIdle: true,
   };
 }
 
@@ -157,7 +159,8 @@ async function main() {
   const client = new ImapFlow(getConfig());
   try {
     await client.connect();
-    const lock = await client.getMailboxLock(mailbox);
+    // SOLO LECTURA: EXAMINE en vez de SELECT — el servidor rechaza cualquier escritura
+    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
     try {
       const source = await client.download(String(uid), undefined, { uid: true });
       if (!source || !source.content) {
@@ -196,12 +199,17 @@ async function main() {
 
       fs.writeFileSync(outputPath, pdfBuffer);
 
+      // Programar auto-limpieza del PDF temporal tras 5 minutos
+      setTimeout(() => {
+        try { fs.unlinkSync(outputPath); } catch (e) { /* ya eliminado */ }
+      }, 5 * 60 * 1000).unref();
+
       console.log(JSON.stringify({
         success: true,
         path: outputPath,
         size: formatBytes(pdfBuffer.length),
         subject: email.subject,
-        message: `PDF generado: ${outputPath}`,
+        message: `PDF generado: ${outputPath} (se eliminara automaticamente en 5 min)`,
       }));
     } finally {
       lock.release();

@@ -1,5 +1,11 @@
 /**
- * email-formatter.js — Formateador de emails para WhatsApp
+ * email-formatter.js — Formateador de emails para WhatsApp (SOLO LECTURA)
+ *
+ * SEGURIDAD: Este modulo es un formateador puro — recibe datos y devuelve strings.
+ * No realiza conexiones de red, no escribe en disco, no modifica estado.
+ *
+ * PRIVACIDAD: No persiste, cachea ni registra ningun dato de email.
+ * Todo el procesamiento es en memoria y de un solo uso.
  *
  * Convierte datos crudos de email a texto con formato rico de WhatsApp:
  * - *negrita* para remitentes y asuntos
@@ -140,7 +146,7 @@ function formatSingleEmail(email) {
 
   // Footer
   lines.push(SEPARATOR);
-  lines.push('_"marcar leido" \u00b7 "siguiente" \u00b7 "correo"_');
+  lines.push('_"siguiente" \u00b7 "correo" \u00b7 "buscar X"_');
 
   return lines.join("\n");
 }

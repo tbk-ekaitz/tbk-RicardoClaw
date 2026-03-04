@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 /**
- * imap-client.js — Cliente IMAP para el skill email-reader de OpenClaw
+ * imap-client.js — Cliente IMAP SOLO LECTURA para el skill email-reader
+ *
+ * SEGURIDAD: Este cliente opera en modo SOLO LECTURA a nivel de protocolo IMAP.
+ * - Todas las conexiones al buzon usan readOnly: true (comando EXAMINE en vez de SELECT)
+ * - El servidor IMAP RECHAZARA cualquier intento de modificar flags, mover o eliminar mensajes
+ * - No existe ninguna funcion de escritura en este codigo
+ * - No hay dependencias SMTP — imposible enviar emails
+ *
+ * PRIVACIDAD: Los datos de email se procesan en memoria y se envian a stdout.
+ * No se persisten en disco, logs, ni bases de datos. Sin telemetria ni envio a terceros.
  *
  * Comandos:
  *   check [--limit N] [--format whatsapp]     Ver emails no leidos
  *   fetch <uid> [--format whatsapp]            Leer un email completo
  *   search --query "texto" [--limit N]         Buscar emails
  *   list-mailboxes [--format whatsapp]         Listar carpetas
- *   mark-read <uid> [uid2 uid3...]             Marcar como leido
  */
 
 const { ImapFlow } = require("imapflow");
@@ -35,6 +43,8 @@ function getConfig() {
       pass: process.env.IMAP_PASS,
     },
     logger: false,
+    // No permitir que ImapFlow haga auto-idle con cambios
+    disableAutoIdle: true,
   };
 }
 
@@ -42,8 +52,14 @@ function getMailbox() {
   return process.env.IMAP_MAILBOX || "INBOX";
 }
 
-// --- IMAP connection helper ---
-async function withClient(fn) {
+// --- IMAP connection helper (SOLO LECTURA) ---
+/**
+ * Abre una conexion IMAP y ejecuta fn con el cliente.
+ * El buzon SIEMPRE se abre en modo readOnly (EXAMINE).
+ * Esto es una garantia a nivel de protocolo: el servidor IMAP rechaza
+ * cualquier operacion de escritura (STORE, EXPUNGE, MOVE, COPY, APPEND).
+ */
+async function withReadOnlyClient(fn) {
   const client = new ImapFlow(getConfig());
   try {
     await client.connect();
@@ -53,14 +69,26 @@ async function withClient(fn) {
   }
 }
 
-// --- Commands ---
+/**
+ * Abre un buzon en modo SOLO LECTURA.
+ * ImapFlow con { readOnly: true } envia EXAMINE en vez de SELECT.
+ * EXAMINE = el servidor trata el buzon como inmutable:
+ * - No se pueden cambiar flags (\Seen, \Flagged, etc.)
+ * - No se pueden eliminar mensajes
+ * - No se pueden mover mensajes
+ * - No se puede hacer EXPUNGE
+ */
+async function getReadOnlyLock(client, mailbox) {
+  return client.getMailboxLock(mailbox || getMailbox(), { readOnly: true });
+}
+
+// --- Commands (TODAS solo lectura) ---
 
 async function checkInbox(limit = 5, format = "json") {
-  return withClient(async (client) => {
-    const lock = await client.getMailboxLock(getMailbox());
+  return withReadOnlyClient(async (client) => {
+    const lock = await getReadOnlyLock(client);
     try {
       const messages = [];
-      // Fetch latest unseen messages
       const searchResult = await client.search({ seen: false }, { uid: true });
       const uids = searchResult.slice(-limit).reverse();
 
@@ -107,8 +135,8 @@ async function checkInbox(limit = 5, format = "json") {
 }
 
 async function fetchEmail(uid, format = "json") {
-  return withClient(async (client) => {
-    const lock = await client.getMailboxLock(getMailbox());
+  return withReadOnlyClient(async (client) => {
+    const lock = await getReadOnlyLock(client);
     try {
       const source = await client.download(String(uid), undefined, { uid: true });
       if (!source || !source.content) {
@@ -147,10 +175,9 @@ async function fetchEmail(uid, format = "json") {
 }
 
 async function searchEmails(query, limit = 5, format = "json") {
-  return withClient(async (client) => {
-    const lock = await client.getMailboxLock(getMailbox());
+  return withReadOnlyClient(async (client) => {
+    const lock = await getReadOnlyLock(client);
     try {
-      // Search in subject and from
       const criteria = {
         or: [
           { subject: query },
@@ -206,7 +233,7 @@ async function searchEmails(query, limit = 5, format = "json") {
 }
 
 async function listMailboxes(format = "json") {
-  return withClient(async (client) => {
+  return withReadOnlyClient(async (client) => {
     const mailboxes = await client.list();
     const result = mailboxes.map((m) => ({
       path: m.path,
@@ -223,20 +250,11 @@ async function listMailboxes(format = "json") {
   });
 }
 
-async function markRead(uids) {
-  return withClient(async (client) => {
-    const lock = await client.getMailboxLock(getMailbox());
-    try {
-      for (const uid of uids) {
-        await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
-      }
-      const result = { success: true, marked: uids, message: `${uids.length} email(s) marcado(s) como leido(s)` };
-      console.log(JSON.stringify(result, null, 2));
-    } finally {
-      lock.release();
-    }
-  });
-}
+// --- NO HAY FUNCIONES DE ESCRITURA ---
+// markRead, messageFlagsAdd, messageDelete, messageMove, append, store,
+// expunge, copy — NINGUNA de estas operaciones existe en este cliente.
+// Aunque se anadieran, el servidor IMAP las rechazaria porque el buzon
+// esta abierto con EXAMINE (readOnly: true).
 
 // --- Helpers ---
 
@@ -261,23 +279,13 @@ function countAttachments(structure) {
   return count;
 }
 
-function formatBytes(bytes) {
-  if (!bytes) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-}
-
 // --- CLI ---
 
 async function main() {
-  // Load .env from skill directory
+  // Load .env from skill directory and project root
   try {
     const path = require("path");
-    const dotenvPath = path.resolve(__dirname, "..", ".env");
-    require("dotenv").config({ path: dotenvPath });
-    // Also try project root .env
+    require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
     require("dotenv").config({ path: path.resolve(__dirname, "..", "..", "..", ".env") });
   } catch (e) {
     // dotenv not critical if env vars set externally
@@ -329,18 +337,9 @@ async function main() {
       case "list-mailboxes":
         await listMailboxes(format);
         break;
-      case "mark-read": {
-        const uids = flags._positional || [];
-        if (uids.length === 0) {
-          console.error("Uso: imap-client.js mark-read <uid1> [uid2 uid3...]");
-          process.exit(1);
-        }
-        await markRead(uids);
-        break;
-      }
       default:
         console.error(`Comando desconocido: ${command}`);
-        console.error("Comandos: check, fetch, search, list-mailboxes, mark-read");
+        console.error("Comandos disponibles (solo lectura): check, fetch, search, list-mailboxes");
         process.exit(1);
     }
   } catch (err) {

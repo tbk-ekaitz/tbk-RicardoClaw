@@ -1,7 +1,7 @@
 {
   "name": "openclaw-email-reader",
   "version": "1.0.0",
-  "description": "OpenClaw skill - Lector de email para WhatsApp con formato rico",
+  "description": "OpenClaw skill - Lector de email SOLO LECTURA para WhatsApp con formato rico",
   "private": true,
   "scripts": {
     "check": "node scripts/imap-client.js check --format whatsapp",

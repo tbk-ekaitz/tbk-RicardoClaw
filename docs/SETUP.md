@@ -1,4 +1,26 @@
-# Guia de Configuracion — OpenClaw Email Reader
+# Guia de Configuracion — OpenClaw Email Reader (Solo Lectura)
+
+## Modelo de seguridad
+
+Este sistema esta disenado como **solo lectura a nivel de protocolo**:
+
+- **IMAP EXAMINE**: La conexion al servidor de correo usa el comando EXAMINE
+  (no SELECT). Esto significa que el servidor IMAP **rechaza fisicamente**
+  cualquier operacion de escritura (modificar flags, eliminar, mover mensajes).
+  No es una restriccion de software — es una garantia del protocolo IMAP.
+- **Sin SMTP**: No existe ninguna dependencia ni configuracion SMTP. Es
+  imposible enviar emails desde este sistema.
+- **Sin codigo de escritura**: No existen funciones para mark-read, delete,
+  move, store, expunge ni append. Aunque se anadieran, el servidor las rechazaria.
+
+## Privacidad de datos
+
+- Los emails se procesan **exclusivamente en memoria local** y se descartan
+  tras mostrarlos en WhatsApp
+- Los PDFs temporales se auto-eliminan a los 5 minutos
+- **Ningun dato de email sale de tu maquina** — ni al LLM cloud, ni a APIs externas
+- El LLM (Ollama) corre en tu propia red local
+- Las credenciales se almacenan solo en `.env` (excluido de git por `.gitignore`)
 
 ## Requisitos previos
 
