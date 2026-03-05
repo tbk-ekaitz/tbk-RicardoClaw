@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # setup.sh — Instalacion automatizada de OpenClaw Email Reader via WhatsApp
+#             Gmail API (solo lectura — scope gmail.readonly)
 # =============================================================================
 set -euo pipefail
 
@@ -16,11 +17,13 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CRED_DIR="$SCRIPT_DIR/skills/email-reader/credentials"
 
 echo ""
 echo "=========================================="
 echo "  OpenClaw Email Reader - Setup"
 echo "  Leer correos desde WhatsApp"
+echo "  (Gmail API — SOLO LECTURA)"
 echo "=========================================="
 echo ""
 
@@ -58,32 +61,60 @@ info "Instalando dependencias del skill email-reader..."
 cd "$SCRIPT_DIR/skills/email-reader"
 npm install
 cd "$SCRIPT_DIR"
-ok "Dependencias instaladas"
+ok "Dependencias instaladas (googleapis, html-to-text, html-pdf-node)"
 
 # --- Paso 5: Configurar .env ---
 if [ ! -f "$SCRIPT_DIR/.env" ]; then
     info "Creando archivo .env desde plantilla..."
     cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
-    warn "IMPORTANTE: Edita el archivo .env con tus credenciales:"
+    warn "Edita .env con la IP de tu servidor Ollama:"
+    echo "    nano $SCRIPT_DIR/.env"
     echo ""
-    echo "  1. Gmail App Password:"
-    echo "     - Ve a https://myaccount.google.com/apppasswords"
-    echo "     - Necesitas tener 2FA activado"
-    echo "     - Crea una app password para 'Correo'"
-    echo "     - Copia la contrasena generada"
-    echo ""
-    echo "  2. Ollama:"
-    echo "     - Asegurate de tener Ollama corriendo"
-    echo "     - Modelo requerido: ollama pull qwen2.5:7b"
-    echo "     - Modelo opcional: ollama pull qwen2.5:72b"
-    echo ""
-    echo "  Edita con: nano $SCRIPT_DIR/.env"
-    echo ""
-else
-    ok "Archivo .env ya existe"
 fi
 
-# --- Paso 6: Verificar Ollama ---
+# --- Paso 6: Crear directorio de credenciales ---
+mkdir -p "$CRED_DIR"
+
+# --- Paso 7: Verificar credenciales Google ---
+info "Verificando credenciales de Gmail API..."
+if [ ! -f "$CRED_DIR/client_secret.json" ]; then
+    warn "No se encontro client_secret.json"
+    echo ""
+    echo "  Para configurar Gmail API (solo lectura):"
+    echo ""
+    echo "  1. Ve a https://console.cloud.google.com/"
+    echo "  2. Crea un proyecto nuevo"
+    echo "  3. Habilita 'Gmail API' en la Biblioteca"
+    echo "  4. Configura pantalla de consentimiento OAuth"
+    echo "     - Agrega solo el scope: gmail.readonly"
+    echo "  5. Crea credenciales > ID de cliente OAuth > Escritorio"
+    echo "  6. Descarga el JSON y guardalo como:"
+    echo "     $CRED_DIR/client_secret.json"
+    echo ""
+    echo "  Ver docs/SETUP.md para instrucciones detalladas."
+    echo ""
+else
+    ok "client_secret.json encontrado"
+
+    if [ ! -f "$CRED_DIR/gmail-token.json" ]; then
+        info "Ejecutando autorizacion OAuth (se abrira el navegador)..."
+        echo "  Scope: gmail.readonly (SOLO LECTURA)"
+        echo ""
+        node "$SCRIPT_DIR/skills/email-reader/scripts/oauth-setup.js"
+    else
+        ok "Token OAuth ya existe"
+        # Test rapido
+        info "Probando conexion a Gmail API..."
+        if node "$SCRIPT_DIR/skills/email-reader/scripts/gmail-client.js" check --limit 1 2>/dev/null; then
+            ok "Conexion Gmail API exitosa"
+        else
+            warn "No se pudo conectar a Gmail API. Puede que el token haya expirado."
+            warn "Re-ejecuta: node skills/email-reader/scripts/oauth-setup.js"
+        fi
+    fi
+fi
+
+# --- Paso 8: Verificar Ollama ---
 info "Verificando conexion a Ollama..."
 if [ -f "$SCRIPT_DIR/.env" ]; then
     OLLAMA_HOST=$(grep -E '^OLLAMA_HOST=' "$SCRIPT_DIR/.env" | cut -d'=' -f2 | tr -d '"')
@@ -92,26 +123,9 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
             ok "Ollama responde en $OLLAMA_HOST"
         else
             warn "No se pudo conectar a Ollama en $OLLAMA_HOST"
-            warn "Asegurate de que Ollama este corriendo"
         fi
     else
         warn "Configura OLLAMA_HOST en .env con la IP de tu servidor Ollama"
-    fi
-fi
-
-# --- Paso 7: Test rapido IMAP ---
-info "Verificando configuracion IMAP..."
-if [ -f "$SCRIPT_DIR/.env" ]; then
-    IMAP_PASS=$(grep -E '^IMAP_PASS=' "$SCRIPT_DIR/.env" | cut -d'=' -f2 | tr -d '"')
-    if [ "$IMAP_PASS" = "tu_gmail_app_password" ] || [ -z "$IMAP_PASS" ]; then
-        warn "Las credenciales IMAP no estan configuradas en .env"
-    else
-        info "Probando conexion IMAP..."
-        if node "$SCRIPT_DIR/skills/email-reader/scripts/imap-client.js" check --limit 1 2>/dev/null; then
-            ok "Conexion IMAP exitosa"
-        else
-            warn "No se pudo conectar al servidor IMAP. Verifica las credenciales en .env"
-        fi
     fi
 fi
 
@@ -121,20 +135,27 @@ echo "=========================================="
 echo "  Setup completado"
 echo "=========================================="
 echo ""
+echo "  Seguridad: Gmail API con scope gmail.readonly"
+echo "  Google BLOQUEA cualquier escritura (HTTP 403)"
+echo ""
 echo "  Proximos pasos:"
 echo ""
-echo "  1. Edita .env con tus credenciales (si no lo has hecho)"
-echo "     nano .env"
-echo ""
-echo "  2. Ejecuta el onboarding de OpenClaw:"
+if [ ! -f "$CRED_DIR/client_secret.json" ]; then
+echo "  1. Configura Google Cloud Console (ver docs/SETUP.md)"
+echo "  2. Coloca client_secret.json en credentials/"
+echo "  3. Ejecuta: node skills/email-reader/scripts/oauth-setup.js"
+echo "  4. Ejecuta: openclaw onboard"
+else
+echo "  1. Ejecuta el onboarding de OpenClaw:"
 echo "     openclaw onboard"
+fi
 echo ""
-echo "  3. Vincula WhatsApp (escanea el QR con tu telefono):"
+echo "  2. Vincula WhatsApp (escanea el QR con tu telefono):"
 echo "     openclaw channels login --channel whatsapp"
 echo ""
-echo "  4. Inicia el Gateway:"
+echo "  3. Inicia el Gateway:"
 echo "     openclaw gateway"
 echo ""
-echo "  5. Envia 'correo' desde WhatsApp para probar!"
+echo "  4. Envia 'correo' desde WhatsApp para probar!"
 echo ""
 echo "=========================================="

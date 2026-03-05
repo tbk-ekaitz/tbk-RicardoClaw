@@ -2,16 +2,15 @@
 
 ## Modelo de seguridad
 
-Este sistema esta disenado como **solo lectura a nivel de protocolo**:
+Este sistema esta disenado como **solo lectura a 3 niveles**:
 
-- **IMAP EXAMINE**: La conexion al servidor de correo usa el comando EXAMINE
-  (no SELECT). Esto significa que el servidor IMAP **rechaza fisicamente**
-  cualquier operacion de escritura (modificar flags, eliminar, mover mensajes).
-  No es una restriccion de software — es una garantia del protocolo IMAP.
+- **Gmail API + OAuth `gmail.readonly`**: El token OAuth solo tiene permiso de
+  lectura. Google **rechaza con HTTP 403** cualquier intento de enviar, eliminar,
+  modificar o mover emails. Esto es una garantia de Google, no del codigo.
 - **Sin SMTP**: No existe ninguna dependencia ni configuracion SMTP. Es
   imposible enviar emails desde este sistema.
-- **Sin codigo de escritura**: No existen funciones para mark-read, delete,
-  move, store, expunge ni append. Aunque se anadieran, el servidor las rechazaria.
+- **Sin codigo de escritura**: No existen funciones para send, delete, modify,
+  trash ni draft. Aunque se anadieran, Google las rechazaria.
 
 ## Privacidad de datos
 
@@ -20,7 +19,7 @@ Este sistema esta disenado como **solo lectura a nivel de protocolo**:
 - Los PDFs temporales se auto-eliminan a los 5 minutos
 - **Ningun dato de email sale de tu maquina** — ni al LLM cloud, ni a APIs externas
 - El LLM (Ollama) corre en tu propia red local
-- Las credenciales se almacenan solo en `.env` (excluido de git por `.gitignore`)
+- El token OAuth y credenciales se almacenan solo en local (excluidos de git)
 
 ## Requisitos previos
 
@@ -28,7 +27,8 @@ Este sistema esta disenado como **solo lectura a nivel de protocolo**:
 |-----------|----------------|-------|
 | Node.js | 22+ | https://nodejs.org |
 | Ollama | Ultima | Con modelo `qwen2.5:7b` descargado |
-| Cuenta Gmail | - | Con 2FA activado |
+| Cuenta Gmail | - | Cualquier cuenta Gmail personal o Workspace |
+| Cuenta Google Cloud | - | Gratis — solo para crear credenciales OAuth |
 | WhatsApp | - | En un telefono con conexion a internet |
 
 ## Paso 1: Clonar y configurar
@@ -40,39 +40,65 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-El script `setup.sh` verificara los requisitos e instalara las dependencias automaticamente.
+## Paso 2: Crear proyecto en Google Cloud Console
 
-## Paso 2: Credenciales de Gmail (App Password)
+Esto es una configuracion **unica** (10 minutos):
 
-Gmail no permite acceso directo con contrasena. Necesitas crear una **App Password**:
+### 2.1. Crear proyecto
 
-1. Ve a https://myaccount.google.com/apppasswords
-2. Si no ves la opcion, primero activa 2FA en https://myaccount.google.com/signinoptions/two-step-verification
-3. Selecciona "Correo" como aplicacion
-4. Selecciona "Otro" como dispositivo y pon "OpenClaw"
-5. Google generara una contrasena de 16 caracteres (ej: `abcd efgh ijkl mnop`)
-6. Copia esa contrasena (sin espacios) en tu `.env`:
+1. Ve a https://console.cloud.google.com/
+2. Click en el selector de proyecto (arriba) > "Nuevo proyecto"
+3. Nombre: `openclaw-email-reader` (o lo que quieras)
+4. Click "Crear"
 
-```env
-IMAP_HOST=imap.gmail.com
-IMAP_PORT=993
-IMAP_USER=tu_email@gmail.com
-IMAP_PASS=abcdefghijklmnop
-IMAP_TLS=true
-IMAP_MAILBOX=INBOX
+### 2.2. Habilitar Gmail API
+
+1. En el menu lateral: **APIs y servicios** > **Biblioteca**
+2. Busca "Gmail API"
+3. Click en **Gmail API** > **Habilitar**
+
+### 2.3. Configurar pantalla de consentimiento OAuth
+
+1. **APIs y servicios** > **Pantalla de consentimiento OAuth**
+2. Tipo de usuario: **Externo** (a menos que tengas Google Workspace, entonces Interno)
+3. Rellena:
+   - Nombre de la app: `Email Reader`
+   - Email de soporte: tu email
+   - Dominios autorizados: dejalo vacio
+4. **Scopes**: click "Agregar o quitar scopes"
+   - Busca `gmail.readonly` y marcalo
+   - **NO marques** ningun otro scope de Gmail
+5. **Usuarios de prueba**: agrega tu email de Gmail
+6. Guarda todo
+
+### 2.4. Crear credenciales OAuth
+
+1. **APIs y servicios** > **Credenciales**
+2. Click **Crear credenciales** > **ID de cliente OAuth**
+3. Tipo de aplicacion: **Aplicacion de escritorio**
+4. Nombre: `OpenClaw Email Reader`
+5. Click **Crear**
+6. Click **Descargar JSON** en el popup
+7. Renombra el archivo descargado a `client_secret.json`
+8. Muevelo a:
+   ```bash
+   mv ~/Downloads/client_secret.json skills/email-reader/credentials/
+   ```
+
+### 2.5. Autorizar acceso (una sola vez)
+
+```bash
+node skills/email-reader/scripts/oauth-setup.js
 ```
 
-### Habilitar IMAP en Gmail
+Esto abrira tu navegador. Inicia sesion con tu cuenta Gmail y autoriza el
+acceso de **solo lectura**. El token se guardara en `credentials/gmail-token.json`.
 
-1. Abre Gmail en el navegador
-2. Configuracion (engranaje) > "Ver todos los ajustes"
-3. Pestana "Reenvio y correo POP/IMAP"
-4. Activa "Habilitar IMAP"
-5. Guarda los cambios
+**Importante**: Veras una advertencia de "app no verificada" — es normal para
+apps de desarrollo. Click en "Avanzado" > "Ir a Email Reader (no seguro)".
+Esto es porque tu app no esta publicada (solo tu la usas).
 
 ## Paso 3: Configurar Ollama
-
-Asegurate de que Ollama esta corriendo en tu red local con el modelo descargado:
 
 ```bash
 # En la maquina donde corre Ollama:
@@ -87,20 +113,15 @@ OLLAMA_HOST=http://192.168.1.100:11434
 OLLAMA_MODEL=qwen2.5:7b
 ```
 
-Para verificar que funciona:
-```bash
-curl http://192.168.1.100:11434/api/tags
-```
+Para verificar: `curl http://192.168.1.100:11434/api/tags`
 
 ### Usar modelo potente (opcional)
-
-Para tareas que requieran mas capacidad:
 
 ```bash
 ollama pull qwen2.5:72b
 ```
 
-Cambia en `.env` o en `openclaw.json` el modelo a `qwen2.5:72b`.
+Cambia `OLLAMA_MODEL=qwen2.5:72b` en `.env` o `openclaw.json`.
 
 ## Paso 4: Configurar tu numero de WhatsApp
 
@@ -121,7 +142,7 @@ channels: {
 openclaw onboard
 ```
 
-Sigue el asistente interactivo. Cuando pregunte por el proveedor de IA, selecciona Ollama y proporciona la URL.
+Sigue el asistente interactivo. Cuando pregunte por el proveedor de IA, selecciona Ollama.
 
 ## Paso 6: Vincular WhatsApp
 
@@ -129,11 +150,7 @@ Sigue el asistente interactivo. Cuando pregunte por el proveedor de IA, seleccio
 openclaw channels login --channel whatsapp
 ```
 
-Aparecera un QR code en la terminal. Escanea con tu WhatsApp:
-1. Abre WhatsApp en tu telefono
-2. Ve a Configuracion > Dispositivos vinculados
-3. Toca "Vincular un dispositivo"
-4. Escanea el QR
+Escanea el QR con tu WhatsApp (Configuracion > Dispositivos vinculados > Vincular).
 
 ## Paso 7: Iniciar el Gateway
 
@@ -141,30 +158,24 @@ Aparecera un QR code en la terminal. Escanea con tu WhatsApp:
 openclaw gateway
 ```
 
-El gateway se ejecutara en primer plano. Para ejecucion en background:
-
-```bash
-openclaw gateway &
-# O usar el daemon:
-openclaw onboard --install-daemon
-```
+Para background: `openclaw onboard --install-daemon`
 
 ## Paso 8: Probar
 
-Desde WhatsApp, envia estos mensajes al numero vinculado:
+Desde WhatsApp, envia estos mensajes:
 
 | Mensaje | Resultado esperado |
 |---------|-------------------|
 | `correo` | Lista de emails no leidos |
 | `leer 1` | Contenido del primer email |
 | `buscar Amazon` | Emails de Amazon |
-| `carpetas` | Lista de carpetas |
+| `carpetas` | Lista de etiquetas |
 
 ## Verificacion de componentes
 
 ```bash
-# Test conexion IMAP
-node skills/email-reader/scripts/imap-client.js check --limit 3
+# Test conexion Gmail API
+node skills/email-reader/scripts/gmail-client.js check --limit 3
 
 # Test formateo WhatsApp
 cd skills/email-reader && npm run test:format
@@ -173,19 +184,35 @@ cd skills/email-reader && npm run test:format
 openclaw agent --message "revisa mi correo"
 ```
 
+## Verificar que es solo lectura
+
+Puedes confirmar que el scope es correcto inspeccionando el token:
+
+```bash
+cat skills/email-reader/credentials/gmail-token.json | grep scope
+```
+
+Debe mostrar SOLO `gmail.readonly`. Si ves otro scope, elimina el token y
+re-ejecuta `oauth-setup.js`.
+
 ## Solucion de problemas
 
-### "No pude conectar al servidor de correo"
-- Verifica que IMAP esta habilitado en Gmail
-- Verifica la App Password (no es tu contrasena normal)
-- Comprueba que `IMAP_HOST` es `imap.gmail.com` y `IMAP_PORT` es `993`
+### "Permiso denegado por Google" (HTTP 403)
+- El token OAuth puede haber expirado. Re-ejecuta `node scripts/oauth-setup.js`
+- Verifica que Gmail API esta habilitada en tu proyecto de Google Cloud
+
+### "client_secret.json no encontrado"
+- Descargalo de Google Cloud Console > APIs > Credenciales > tu OAuth Client > Download JSON
+- Guardalo en `skills/email-reader/credentials/client_secret.json`
+
+### "Token OAuth no encontrado"
+- Ejecuta `node skills/email-reader/scripts/oauth-setup.js` para autorizar
 
 ### "OpenClaw no responde en WhatsApp"
 - Verifica que el gateway esta corriendo: `openclaw gateway`
 - Comprueba que tu numero esta en `allowFrom` de `openclaw.json`
-- Verifica el vinculo WhatsApp: `openclaw channels login --channel whatsapp`
 
 ### "Ollama no responde"
-- Verifica que Ollama esta corriendo: `curl http://<IP>:11434/api/tags`
+- Verifica: `curl http://<IP>:11434/api/tags`
 - Comprueba que el modelo esta descargado: `ollama list`
-- Si Ollama esta en otra maquina, asegurate de que escucha en `0.0.0.0` (no solo localhost)
+- Si Ollama esta en otra maquina, asegurate de que escucha en `0.0.0.0`

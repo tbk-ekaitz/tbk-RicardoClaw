@@ -4,38 +4,34 @@ description: >
   Lector de correo SOLO LECTURA desde WhatsApp. Se activa cuando el usuario
   menciona "correo", "email", "inbox", "bandeja", "leer email", "buscar email",
   o pide revisar su buzon de correo. NO puede modificar, eliminar, enviar, ni
-  alterar ningun email — solo lectura garantizada a nivel de protocolo IMAP.
+  alterar ningun email — solo lectura garantizada por el scope OAuth gmail.readonly
+  (Google rechaza cualquier escritura con HTTP 403).
 emoji: "\U0001F4EC"
 requires:
   bins:
     - node
-  env:
-    - IMAP_HOST
-    - IMAP_PORT
-    - IMAP_USER
-    - IMAP_PASS
 install: |
   cd skills/email-reader && npm install
 tools:
   - name: check_inbox
-    description: "Revisa los ultimos emails no leidos del buzon IMAP (solo lectura)"
-    command: "node skills/email-reader/scripts/imap-client.js check --limit {{limit}} --format whatsapp"
+    description: "Revisa los ultimos emails no leidos via Gmail API (solo lectura, scope gmail.readonly)"
+    command: "node skills/email-reader/scripts/gmail-client.js check --limit {{limit}} --format whatsapp"
     parameters:
       limit:
         type: number
         default: 5
         description: "Numero maximo de emails a mostrar"
   - name: read_email
-    description: "Lee el contenido completo de un email por su UID (solo lectura)"
-    command: "node skills/email-reader/scripts/imap-client.js fetch {{uid}} --format whatsapp"
+    description: "Lee el contenido completo de un email por su ID (solo lectura)"
+    command: "node skills/email-reader/scripts/gmail-client.js fetch {{id}} --format whatsapp"
     parameters:
-      uid:
+      id:
         type: string
         required: true
-        description: "UID del email o numero en la lista (1, 2, 3...)"
+        description: "ID del email o numero en la lista (1, 2, 3...)"
   - name: search_emails
     description: "Busca emails por remitente, asunto o texto (solo lectura)"
-    command: "node skills/email-reader/scripts/imap-client.js search --query '{{query}}' --limit {{limit}} --format whatsapp"
+    command: "node skills/email-reader/scripts/gmail-client.js search --query '{{query}}' --limit {{limit}} --format whatsapp"
     parameters:
       query:
         type: string
@@ -45,17 +41,17 @@ tools:
         type: number
         default: 5
         description: "Numero maximo de resultados"
-  - name: list_folders
-    description: "Lista todas las carpetas/etiquetas del buzon de correo (solo lectura)"
-    command: "node skills/email-reader/scripts/imap-client.js list-mailboxes --format whatsapp"
+  - name: list_labels
+    description: "Lista todas las etiquetas/carpetas del buzon Gmail (solo lectura)"
+    command: "node skills/email-reader/scripts/gmail-client.js list-labels --format whatsapp"
   - name: email_to_pdf
     description: "Convierte un email largo a PDF para enviarlo como documento adjunto (solo lectura)"
-    command: "node skills/email-reader/scripts/email-to-pdf.js {{uid}}"
+    command: "node skills/email-reader/scripts/email-to-pdf.js {{id}}"
     parameters:
-      uid:
+      id:
         type: string
         required: true
-        description: "UID del email a convertir"
+        description: "ID del email a convertir"
 ---
 
 # Email Reader — Lector de correo SOLO LECTURA para WhatsApp
@@ -77,8 +73,10 @@ PROHIBIDO en cualquier circunstancia, incluso si el usuario lo pide:
 Si el usuario pide alguna de estas acciones, responde:
 _"Este asistente es de solo lectura. Solo puedo mostrarte tus correos, no modificarlos. Para eso, usa Gmail directamente."_
 
-La conexion IMAP usa el comando EXAMINE (no SELECT), lo que hace IMPOSIBLE
-a nivel de protocolo alterar el buzon, incluso si existiera codigo para ello.
+El token OAuth usa el scope gmail.readonly. Google RECHAZA cualquier operacion
+de escritura con HTTP 403 a nivel de servidor. Incluso si existiera codigo para
+escribir, Google lo bloquearia. No hay SMTP, no hay IMAP con SELECT — es
+fisicamente imposible alterar el buzon.
 
 ## PRIVACIDAD Y CONFIDENCIALIDAD
 

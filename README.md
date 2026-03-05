@@ -6,15 +6,15 @@ Prueba tecnica de integracion de OpenClaw para automatizaciones en entornos no i
 
 Integracion de [OpenClaw](https://openclaw.ai/) que permite **leer correos de Gmail desde WhatsApp** con formato visual rico (negrita, cursiva, iconos, listas, PDFs).
 
-### Seguridad: SOLO LECTURA por diseno
+### Seguridad: SOLO LECTURA a 3 niveles
 
-Este sistema opera en modo **solo lectura garantizado a nivel de protocolo**:
+| Nivel | Mecanismo | Quien lo garantiza |
+|-------|-----------|-------------------|
+| **OAuth scope** | Token con `gmail.readonly` | Google rechaza escritura con HTTP 403 |
+| **Codigo** | No existe ninguna funcion de escritura | El cliente solo tiene check/fetch/search |
+| **Sin SMTP** | Cero dependencias de envio de email | Imposible enviar desde este sistema |
 
-- La conexion IMAP usa el comando `EXAMINE` (no `SELECT`) — el servidor de correo **rechaza cualquier escritura** aunque se intentara
-- **No existe codigo** para enviar, responder, eliminar, mover, ni modificar emails
-- **No hay SMTP** — es imposible enviar emails desde este sistema
-- **No se pueden alterar flags** (leido/no leido, importante, etc.)
-- Los PDFs temporales se auto-eliminan a los 5 minutos
+Aunque alguien robe el token OAuth, solo podra **leer** — Google bloquea cualquier modificacion.
 
 ### Privacidad: datos 100% locales
 
@@ -22,13 +22,14 @@ Este sistema opera en modo **solo lectura garantizado a nivel de protocolo**:
 - Los emails se procesan en memoria y se descartan tras mostrarlos
 - **No se guardan** emails en disco, base de datos, ni cache
 - **No se envian** datos a servicios externos ni terceros
-- Credenciales almacenadas solo en `.env` local (excluido de git)
+- PDFs temporales se auto-eliminan a los 5 minutos
+- Token OAuth y credenciales solo en local (excluidos de git)
 - El LLM (Ollama) corre en tu propia red local
 
 ### Arquitectura
 
 ```
-WhatsApp <---> OpenClaw Gateway <---> Gmail (IMAP EXAMINE / solo lectura)
+WhatsApp <---> OpenClaw Gateway <---> Gmail REST API (scope: gmail.readonly)
                      |
               Skill: email-reader
               LLM: Ollama local (qwen2.5:7b)
@@ -41,7 +42,7 @@ WhatsApp <---> OpenClaw Gateway <---> Gmail (IMAP EXAMINE / solo lectura)
 | `correo` | Ver ultimos emails no leidos |
 | `leer 1` | Leer el primer email |
 | `buscar Amazon` | Buscar emails de Amazon |
-| `carpetas` | Ver carpetas del buzon |
+| `carpetas` | Ver etiquetas del buzon |
 | `pdf` | Recibir email largo como documento PDF |
 
 ### Ejemplo de formato
@@ -74,20 +75,22 @@ Ver [docs/SETUP.md](docs/SETUP.md) para la guia completa.
 
 - Node.js 22+
 - Ollama con modelo `qwen2.5:7b` (o `qwen2.5:72b` para mas potencia)
-- Cuenta Gmail con 2FA + App Password
+- Cuenta Gmail + proyecto en Google Cloud Console (gratis)
 - WhatsApp en un telefono
 
 ## Estructura
 
 ```
 ├── openclaw.json                  # Config OpenClaw (canales, modelo, skills)
-├── .env.example                   # Plantilla de credenciales
+├── .env.example                   # Plantilla de configuracion
 ├── setup.sh                       # Script de instalacion
 ├── skills/email-reader/
 │   ├── SKILL.md                   # Definicion del skill (solo lectura)
 │   ├── package.json               # Dependencias Node.js
+│   ├── credentials/               # OAuth tokens (git-ignored)
 │   └── scripts/
-│       ├── imap-client.js         # Cliente IMAP solo lectura (EXAMINE)
+│       ├── gmail-client.js        # Cliente Gmail API (scope gmail.readonly)
+│       ├── oauth-setup.js         # Setup OAuth unico (genera token)
 │       ├── email-formatter.js     # Formateador WhatsApp (negrita, iconos)
 │       └── email-to-pdf.js        # Conversion de email largo a PDF temporal
 └── docs/SETUP.md                  # Guia de configuracion detallada
@@ -97,5 +100,5 @@ Ver [docs/SETUP.md](docs/SETUP.md) para la guia completa.
 
 - **OpenClaw** — Asistente IA open-source (gateway + channels + skills)
 - **Baileys** — Protocolo WhatsApp Web (integrado en OpenClaw)
-- **ImapFlow** — Cliente IMAP moderno para Node.js (modo EXAMINE)
+- **Gmail REST API** — Acceso a Gmail con scope `gmail.readonly` (escritura imposible)
 - **Ollama** — LLM local (qwen2.5:7b / 72b) — datos nunca salen de tu red
